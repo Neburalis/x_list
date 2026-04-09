@@ -3,11 +3,10 @@
 #include <stdlib.h>
 #include <limits.h>
 
-#include "ansi.h"
 #include "list.h"
 #include "base.h"
 
-namespace mylist_aos {
+namespace x_list {
 
 #define eval_print(code) \
     printf("%s = %lld\n", #code, (code))
@@ -18,7 +17,7 @@ namespace mylist_aos {
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wconstant-conversion"
 const int POISON = 0xDEDB333C0CA1;
-#pragma clang diagnostic push
+#pragma clang diagnostic pop
 
 int list_contairing_t_comparator(int first, int second) {
     return first - second;
@@ -98,7 +97,6 @@ list_t * constructor(size_t capacity) {
     list->free_idx = 1;
 
     list->errno = LIST_NO_PROBLEM;
-    list->is_line = true;
 
     return list;
 }
@@ -182,14 +180,6 @@ size_t get_prev_element(list_t *list, size_t element_idx) {
 size_t slow::index(list_t *list, size_t logic_index) {
     verifier(list) verified(return 0;);
 
-    if (list->is_line) {
-        if (logic_index >= size(list)) {
-            list->errno = LIST_INVALID_INDEX;
-            return 0;
-        }
-        return logic_index + 1; // logical 0 -> physical 1
-    }
-
     size_t now_logic_index = 0;
     for (size_t i = front(list); i != 0; i = get_next_element(list, i), ++now_logic_index) {
         if (now_logic_index == logic_index)
@@ -212,138 +202,55 @@ size_t slow::search(list_t *list, list_containing_t value) {
 
 // ------------------------------ modifiers ------------------------------
 
-LIST_ERRNO slow::resize(list_t *list, size_t new_capacity) {
-    // Allow resize to be called when the only existing errno is LIST_OVERFLOW
-    if (list == NULL) return LIST_NULL_POINTER;
-
-    LIST_ERRNO saved_errno = list->errno;
-    if (saved_errno == LIST_OVERFLOW) {
-        list->errno = LIST_NO_PROBLEM; // temporarily clear so verifier will run
-    }
-
-    if (!verifier(list)) {
-        // restore original errno if it wasn't overflow (or verifier set new one)
-        if (saved_errno == LIST_OVERFLOW && list->errno == LIST_NO_PROBLEM) {
-            // verifier passed but set nothing — continue
-        } else {
-            // verifier discovered an error we can't fix here
-            LIST_ERRNO ret = list->errno;
-            list->errno = ret;
-            return ret;
-        }
-    }
-
-    // new_capacity argument is logical capacity (without zombi at index 0)
-    // internal buffer always holds +1 (zombi) element
-    size_t requested = new_capacity + 1;
-
-    size_t used = (list->size > 0) ? list->size - 1 : 0;
-    size_t old_cap = list->capacity;
-
-    // cannot shrink below actual used elements
-    if (requested <= used) {
-        list->errno = LIST_OVERFLOW;
-        return LIST_OVERFLOW;
-    }
-
-    // shrinking requires the array to be linearized — we won't call linearization here
-    if (requested < old_cap && !list->is_line) {
-        list->errno = LIST_INTERNAL_STRUCT_DAMAGED;
-        return LIST_INTERNAL_STRUCT_DAMAGED;
-    }
-
-    // grow or shrink via realloc
-    list_element_t *old_buf = list->elements;
-    list_element_t *new_buf = (list_element_t *) realloc(old_buf, requested * sizeof(list_element_t));
-    if (new_buf == NULL) {
-        list->errno = LIST_CANNOT_REALLOC_MEMORY;
-        return LIST_CANNOT_REALLOC_MEMORY;
-    }
-
-    list->elements = new_buf;
-
-    if (requested > old_cap) {
-        // initialize newly appended elements as free-list entries
-        size_t first_new = old_cap;
-        for (size_t i = first_new; i < requested - 1; ++i) {
-            list->elements[i].prev = SIZE_T_MAX;
-            list->elements[i].next = i + 1;
-        }
-        // last new element
-        list->elements[requested - 1].prev = SIZE_T_MAX;
-        list->elements[requested - 1].next = 0;
-
-        // attach new free segment to existing free list
-        if (list->free_idx == 0) {
-            // no free elements previously
-            list->free_idx = first_new;
-        } else {
-            // find tail of existing free list and append
-            size_t cur = list->free_idx;
-            while (list->elements[cur].next != 0) {
-                cur = list->elements[cur].next;
-            }
-            list->elements[cur].next = first_new;
-        }
-    }
-
-    // update capacity
-    list->capacity = requested;
-
-    // resize fixes overflow condition
-    list->errno = LIST_NO_PROBLEM;
-    list->is_line = list->is_line; // keep previous state
-
-    return LIST_NO_PROBLEM;
-}
-
-LIST_ERRNO slow::linearization(list_t *list) {
-    verifier(list) verified(return LIST_INTERNAL_STRUCT_DAMAGED;);
-
-    // empty or single-element list is already linear
-    if (list->size <= 1) {
-        list->is_line = true;
-        return LIST_NO_PROBLEM;
-    }
-
-    size_t used = list->size - 1; // number of actual elements
-    size_t cap = list->capacity;
-
-    list_element_t *old = list->elements;
-    list_element_t *new_buf = (list_element_t *) calloc(cap, sizeof(list_element_t));
-    if (new_buf == NULL)
-        return LIST_CANNOT_REALLOC_MEMORY;
-
-    new_buf[0].data = POISON;
-    new_buf[0].next = (used > 0) ? 1 : 0;
-
-    size_t new_idx = 1;
-    for (size_t old_idx = front(list); old_idx != 0; old_idx = get_next_element(list, old_idx), ++new_idx) {
-        new_buf[new_idx].data = old[old_idx].data;
-        new_buf[new_idx].prev = new_idx - 1;
-        new_buf[new_idx].next = new_idx + 1;
-    }
-
-    new_buf[1].prev = 0;
-    new_buf[used].next = 0;
-    new_buf[0].prev = used;
-
-    list->free_idx = used + 1;
-    for (size_t i = list->free_idx; i < cap - 1; ++i) {
-        new_buf[i].prev = SIZE_T_MAX;
-        new_buf[i].next = i + 1;
-    }
-    if (list->free_idx < cap) {
-        new_buf[cap - 1].prev = SIZE_T_MAX;
-        new_buf[cap - 1].next = 0;
-    }
-
-    free(old);
-    list->elements = new_buf;
-    list->is_line = true;
-
-    return LIST_NO_PROBLEM;
-}
+// LIST_ERRNO slow::resize(list_t *list, size_t new_capacity) {
+//     verifier(list) || list->errno == LIST_OVERFLOW verified(return list->errno;);
+//
+//     if (new_capacity++ <= size(list))
+//         return LIST_OVERFLOW;
+//
+//     list_element_t *old_elements = list->elements;
+//     list_element_t *new_buf = (list_element_t *) calloc(new_capacity, sizeof(list_element_t));
+//     if (new_buf == NULL) {
+//         return LIST_CANNOT_REALLOC_MEMORY;
+//     }
+//
+//     new_buf[0].data = POISON;
+//     new_buf[0].next = 1;
+//     size_t new_idx = 1;
+//     size_t old_idx = front(list);
+//     do {
+//         new_buf[new_idx].data = old_elements[old_idx].data;
+//         new_buf[new_idx].next = new_idx + 1;
+//         new_buf[new_idx].prev = new_idx - 1;
+//         ++new_idx;
+//         old_idx = get_next_element(list, old_idx);
+//     } while (old_idx != 0);
+//
+//     new_buf[--new_idx] /*последний не пустой*/ .next = 0;
+//     new_buf[0].prev = new_idx;
+//
+//     list->elements = new_buf;
+//     list->free_idx = ++new_idx;
+//     list->capacity = new_capacity;
+//
+//     for ( ; new_idx < new_capacity - 1; ++new_idx) {
+//         // printf("[%zu]\t", new_idx);
+//         new_buf[new_idx].prev = SIZE_T_MAX;
+//         new_buf[new_idx].next = new_idx + 1;
+//         // printf(".prev = %lld \t.next = %lld\n", new_buf[new_idx].prev, new_buf[new_idx].next);
+//     }
+//
+//     new_buf[new_idx].prev = SIZE_T_MAX;
+//     new_buf[new_idx].next = 0;
+//
+//     // dump(list, stdout, "logs/test", "Dump new list into resize into while iteration");
+//     free(old_elements);
+//     return LIST_NO_PROBLEM;
+// }
+//
+// LIST_ERRNO slow::linearization(list_t *list) {
+//
+// }
 
 // Вернет индекс новой ячейки (список свободных будет валидным после вызова)
 function size_t alloc_new_list_element(list_t *list) {
@@ -372,11 +279,9 @@ size_t insert(list_t *list, size_t element_idx, list_containing_t value) {
     size_t next_el_idx = get_next_element(list, element_idx); // Следующий элемент за помещенным
     size_t paste_place = alloc_new_list_element(list);        // Место куда помещаем новый элемент
 
-    bool remain_line = false;
-    if (list->is_line && paste_place != 0) {
-        if (paste_place == element_idx + 1 && next_el_idx == 0)
-            remain_line = true;
-    }
+    // if (!(is_line == true && paste_place = element_idx + 1 && next_el_idx == 0)) {
+    //     list->is_line = false;
+    // }
 
     if (list->errno == LIST_OVERFLOW) // Не хватает места для вставки, пользователю необходимо расширить список
         return 0;
@@ -391,8 +296,6 @@ size_t insert(list_t *list, size_t element_idx, list_containing_t value) {
     elements[next_el_idx].prev = paste_place;
 
     ++list->size;
-
-    list->is_line = remain_line;
 
     return paste_place;
 }
@@ -437,8 +340,6 @@ void erase(list_t *list, size_t element_idx) {
 
     list_element_t *elements = list->elements; // "кешируем" массив, чтобы каждый раз не ходить по указателю на list
 
-    bool remain_line = (list->is_line && element_idx == back(list));
-
     elements[elements[element_idx].prev].next = elements[element_idx].next;
     elements[elements[element_idx].next].prev = elements[element_idx].prev;
 
@@ -447,8 +348,6 @@ void erase(list_t *list, size_t element_idx) {
 
     --list->size;
     list->free_idx = element_idx;
-
-    list->is_line = remain_line;
 }
 
 void pop_front(list_t *list) {
@@ -469,8 +368,6 @@ void swap(list_t *list, size_t el_idx_1, size_t el_idx_2) {
 
     elements[get_next_element(list, el_idx_1)].prev = el_idx_2;
     elements[get_next_element(list, el_idx_2)].prev = el_idx_1;
-
-    list->is_line = false;
 }
 
 }

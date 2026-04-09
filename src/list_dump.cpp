@@ -7,13 +7,11 @@
 #include <stdarg.h>
 
 #include "list.h"
-#include "stringNthong.h"
-#include "io_utils.h"
 #include "base.h"
 
 #include <stddef.h>
 
-namespace mylist_aos {
+namespace x_list {
 
 void print_centered(FILE * fp, const char *str, uint32_t field_width) {
     uint32_t str_len = (uint32_t) strlen(str);
@@ -135,7 +133,7 @@ const char *_generate_image(list_t *list, const char *dir_name) {
 
 void _dump_impl(list_t *list, FILE *logfile, const char *log_dirname,
         int line, const char *func, const char *file,
-        const char *fmt, ...) { // TODO: атрибут чтобы компилятор проверял по правилам prinf fmt  |  Посмотреть tx_prinf /tx_scanf
+        const char *fmt, ...) {
     verifier(list);
     // fprintf(logfile, "<h3>-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=- "
         // "LIST DUMP"" -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-</h3>\n");
