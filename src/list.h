@@ -63,10 +63,16 @@ const char *_generate_image(list_t *list, const char *dir_name);
 void _dump_impl(list_t *list, FILE *logfile, const char *log_dirname,
     int line, const char *func, const char *file,
     const char *fmt, ...) __attribute__ (( format (printf, 7, 8)));
+char *_dump_to_str(list_t *list,
+    int line, const char *func, const char *file,
+    const char *fmt, ...) __attribute__ ((format (printf, 5, 6)));
 
 // dump list to log — supports printf-like format and optional args
 #define dump(list, logfile, log_dirname, fmt, ...) \
     _dump_impl((list), (logfile), (log_dirname), __LINE__, __PRETTY_FUNCTION__, __FILE__, (fmt), ##__VA_ARGS__)
+
+#define dump_to_str(list, fmt, ...) \
+    _dump_to_str((list), __LINE__, __PRETTY_FUNCTION__, __FILE__, (fmt), ##__VA_ARGS__)
 
 // ----- capacity ----
 

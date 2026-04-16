@@ -26,6 +26,21 @@ void print_centered(FILE * fp, const char *str, uint32_t field_width) {
     fprintf(fp, "%*s%s%*s", left_padding, "", str, right_padding, "");
 }
 
+int snprint_centered(char * dst, size_t max_size, const char *str, uint32_t field_width) {
+    uint32_t str_len = (uint32_t) strlen(str);
+    size_t written = 0;
+    if (str_len >= field_width) {
+        written += snprintf(dst, max_size, "%s", str); // If string is too long, print as-is
+        return written;
+    }
+
+    uint32_t left_padding = (field_width - str_len) / 2;
+    uint32_t right_padding = field_width - str_len - left_padding;
+
+    written += snprintf(dst + written, max_size - written, "%*s%s%*s", left_padding, "", str, right_padding, "");
+    return written;
+}
+
 void _generate_dot_dump(list_t *list, FILE * fp) {
     verifier(list);
     fprintf(fp,
@@ -214,6 +229,96 @@ void _dump_impl(list_t *list, FILE *logfile, const char *log_dirname,
     const char * image_filename = _generate_image(list, log_dirname);
 
     fprintf(logfile, "<img src=\"%s\">\n", image_filename);
+}
+
+char *_dump_to_str(list_t *list,
+        int line, const char *func, const char *file,
+        const char *fmt, ...) {
+    verifier(list);
+    // fprintf(logfile, "<h3>-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=- "
+        // "LIST DUMP"" -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-</h3>\n");
+
+    // format prompt (printf-like)
+    char prompt_buf[2048] = "";
+    if (fmt != NULL) {
+        va_list ap;
+        va_start(ap, fmt);
+        vsnprintf(prompt_buf, sizeof(prompt_buf), fmt, ap);
+        va_end(ap);
+    }
+
+    const size_t max_size = 4096;
+    size_t size = max_size, written = 0;
+    char *str = (char *) calloc(max_size, sizeof(char));
+
+    if (fmt != NULL)
+        written += snprintf(str + written, max_size - written, "reason: %s\n", prompt_buf);
+    written += snprintf(str + written, max_size - written, "dump from %s:%d at %s\n", file, line, func);
+    written += snprintf(str + written, max_size - written, "\n");
+    written += snprintf(str + written, max_size - written, "list struct at %p\n", list);
+    written += snprintf(str + written, max_size - written, "size is %zu\t capacity is %zu\n", list->size, list->capacity);
+    written += snprintf(str + written, max_size - written, "front is %zu\t back is %zu\n", list->elements[0].next, list->elements[0].prev);
+    written += snprintf(str + written, max_size - written, "free_idx is %zu\n", list->free_idx);
+    if (list->errno != LIST_NO_PROBLEM) {
+        written += snprintf(str + written, max_size - written, "LIST in invalid state, errno is %s\n", error(list));
+    }
+    written += snprintf(str + written, max_size - written, "elements at >%p\n\n", list->elements);
+
+    list_element_t *elements = list->elements;
+
+    const size_t DLINA_CTPOKI = 128;
+    char CTPOKA[DLINA_CTPOKI] = "";
+    written += snprint_centered(str + written, max_size - written, "", 6);
+    written += snprintf(str + written, max_size - written, "|");
+    for (size_t i = 0; i < list->capacity; ++i) {
+        snprintf(CTPOKA, sizeof(CTPOKA), "[%zu]", i);
+        written += snprint_centered(str + written, max_size - written, CTPOKA, 9);
+        written += snprintf(str + written, max_size - written, "|");
+    }
+    written += snprintf(str + written, max_size - written, "\n");
+
+    size_t free_idx = list->free_idx;
+    written += snprintf(str + written, max_size - written, "data: |");
+    for (size_t i = 0; i < list->capacity; ++i) {
+        if (i == 0)
+            snprintf(CTPOKA, sizeof(CTPOKA), "PSN");
+        else if (i == free_idx) {
+            snprintf(CTPOKA, sizeof(CTPOKA), "empty");
+            free_idx = elements[free_idx].next;
+        }
+        else
+            snprintf(CTPOKA, sizeof(CTPOKA), "%d", elements[i].data);
+
+        // fprintf(logfile, " [%zu] ", i);
+        written += snprint_centered(str + written, max_size - written, CTPOKA, 9);
+        written += snprintf(str + written, max_size - written, "|");
+    }
+    written += snprintf(str + written, max_size - written, "\n");
+
+    written += snprintf(str + written, max_size - written, "next: |");
+    for (size_t i = 0; i < list->capacity; ++i) {
+        snprintf(CTPOKA, sizeof(CTPOKA), "%zu", elements[i].next);
+
+        // fprintf(logfile, " [%zu] ", i);
+        written += snprint_centered(str + written, max_size - written, CTPOKA, 9);
+        written += snprintf(str + written, max_size - written, "|");
+    }
+    written += snprintf(str + written, max_size - written, "\n");
+
+    #pragma clang diagnostic push
+    #pragma clang diagnostic ignored "-Wformat"
+    written += snprintf(str + written, max_size - written, "prev: |");
+    for (size_t i = 0; i < list->capacity; ++i) {
+        snprintf(CTPOKA, sizeof(CTPOKA), "%lld", elements[i].prev);
+
+        // fprintf(logfile, " [%zu] ", i);
+        written += snprint_centered(str + written, max_size - written, CTPOKA, 9);
+        written += snprintf(str + written, max_size - written, "|");
+    }
+    written += snprintf(str + written, max_size - written, "\n\n");
+    #pragma clang diagnostic pop
+
+    return str;
 }
 
 }

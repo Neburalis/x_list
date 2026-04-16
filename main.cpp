@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include <time.h>
 
 #include "base.h"
@@ -50,6 +51,9 @@ int main() {
     DO(size_t idx1 = push_front(list, 5);)
 
     DO(push_front(list, 4);)
+    char *str = dump_to_str(list, 0);
+    printf("%s", str);
+    free(str);
     DO(push_front(list, 3);)
 
     // DO(list->elements[1].next = 690;) // LIST_INVALID_INDEX - цепочка next не приводит к концу списка
